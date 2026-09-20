@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
+import 'core/security_engine.dart';
+import 'core/network_auditor.dart';
+import 'core/voice_engine.dart';
+import 'widgets/radar_waves.dart';
 
 void main() => runApp(const AuraApp());
 
@@ -28,7 +32,13 @@ class AuraCoreScreen extends StatefulWidget {
 
 class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
+  final AuraSecurityEngine _securityEngine = AuraSecurityEngine();
+  final AuraNetworkAuditor _networkAuditor = AuraNetworkAuditor();
+  final AuraVoiceEngine _voiceEngine = AuraVoiceEngine();
+  
   String _securityStatus = "SECURE"; 
+  String _liveConsoleLogs = "SISTEMA AURA: Núcleo defensivo activo e íntegro.";
+  bool _shieldActive = false;
 
   @override
   void initState() {
@@ -37,20 +47,55 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
+
+    // Escucha activa y respuesta por voz ante amenazas en tiempo real
+    _securityEngine.monitorDeviceIntegrity().listen((event) {
+      if (_securityStatus != "SCANNING") {
+        setState(() {
+          _liveConsoleLogs = event["logs"];
+          if (event["level"] == SystemThreatLevel.critical) {
+            _securityStatus = "THREAT";
+            _voiceEngine.speak("Alerta crítica detectada. Posible inyección de memoria activa.");
+          } else {
+            _securityStatus = _shieldActive ? "THREAT" : "SECURE";
+          }
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
+    _voiceEngine.stop();
     super.dispose();
   }
 
   Color _getCoreColor() {
-    switch (_securityStatus) {
-      case "SCANNING": return const Color(0xFF06B6D4); 
-      case "THREAT": return const Color(0xFFEF4444); 
-      default: return const Color(0xFF10B981); 
-    }
+    if (_securityStatus == "SCANNING") return const Color(0xFF06B6D4);
+    if (_securityStatus == "THREAT" || _shieldActive) return const Color(0xFFEF4444);
+    return const Color(0xFF10B981);
+  }
+
+  void _triggerLocalScan() async {
+    setState(() {
+      _securityStatus = "SCANNING";
+      _liveConsoleLogs = "INICIANDO AUDITORÍA INTERNA: Analizando firmas criptográficas y telemetría local...";
+    });
+    _voiceEngine.speak("Iniciando auditoría interna del sistema.");
+    
+    bool safetyCheck = await _networkAuditor.verifyGatewaySafety();
+    
+    setState(() {
+      _securityStatus = safetyCheck ? "SECURE" : "THREAT";
+      _liveConsoleLogs = safetyCheck 
+          ? "ESCANEO COMPLETADO: No se encontraron anomalías en memoria ni aplicaciones espía."
+          : "ALERTA: Gateway de red comprometido o sospechoso.";
+    });
+
+    _voiceEngine.speak(safetyCheck 
+        ? "Análisis completado. Dispositivo seguro." 
+        : "Alerta. Se han detectado riesgos potenciales en el canal de red.");
   }
 
   @override
@@ -67,7 +112,7 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
                   letterSpacing: 3, 
                   fontWeight: FontWeight.bold, 
                   color: _getCoreColor().withOpacity(0.9),
-                  fontSize: 14
+                  fontSize: 13
                 ),
               ),
             ),
@@ -76,33 +121,56 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
                 child: AnimatedBuilder(
                   animation: _pulseController,
                   builder: (context, child) {
-                    return CustomPaint(
-                      painter: RobotFacePainter(
-                        pulseValue: _pulseController.value,
-                        themeColor: _getCoreColor(),
-                        state: _securityStatus,
-                      ),
-                      size: const Size(300, 360),
+                    return Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        if (_securityStatus == "SCANNING")
+                          AuraRadarWaves(animationValue: _pulseController.value, themeColor: _getCoreColor()),
+                        CustomPaint(
+                          painter: RobotFacePainter(
+                            pulseValue: _pulseController.value,
+                            themeColor: _getCoreColor(),
+                            state: _securityStatus,
+                          ),
+                          size: const Size(290, 350),
+                        ),
+                      ],
                     );
                   },
                 ),
               ),
             ),
             Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.black45,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _getCoreColor().withOpacity(0.15)),
+                ),
+                child: Text(
+                  _liveConsoleLogs,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Colors.white70),
+                  textAlign: Center,
+                ),
+              ),
+            ),
+            Padding(
               padding: const EdgeInsets.all(24.0),
               child: Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: const Color(0xFF0F172A),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: _getCoreColor().withOpacity(0.2), width: 1.5),
+                  border: Border.all(color: _getCoreColor().withOpacity(0.15), width: 1.5),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _buildActionButton("ESTABLE", "SECURE", const Color(0xFF10B981)),
-                    _buildActionButton("ESCANEAR", "SCANNING", const Color(0xFF06B6D4)),
-                    _buildActionButton("ESCUDO", "THREAT", const Color(0xFFEF4444)),
+                    _buildActionButton("ESCANEAR", _triggerLocalScan, const Color(0xFF06B6D4)),
+                    _buildShieldButton(),
                   ],
                 ),
               ),
@@ -113,16 +181,42 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
     );
   }
 
-  Widget _buildActionButton(String label, String targetState, Color stateColor) {
-    bool isActive = _securityStatus == targetState;
+  Widget _buildActionButton(String label, VoidCallback action, Color buttonColor) {
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
-        backgroundColor: isActive ? stateColor : const Color(0xFF1E293B),
-        foregroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        backgroundColor: const Color(0xFF1E293B),
+        foregroundColor: buttonColor,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: buttonColor.withOpacity(0.4)),
+        ),
       ),
-      onPressed: () => setState(() => _securityStatus = targetState),
+      onPressed: _securityStatus == "SCANNING" ? null : action,
       child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _buildShieldButton() {
+    return ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: _shieldActive ? const Color(0xFFEF4444) : const Color(0xFF1E293B),
+        foregroundColor: _shieldActive ? Colors.white : const Color(0xFF10B981),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: _shieldActive ? Colors.transparent : const Color(0xFF10B981).withOpacity(0.4)),
+        ),
+      ),
+      onPressed: () {
+        setState(() {
+          _shieldActive = !_shieldActive;
+          _networkAuditor.toggleNetworkShield(_shieldActive);
+          _liveConsoleLogs = _shieldActive 
+              ? "ESCUDO DE RED ACTIVADO: Forzando aislamiento de puertos virtuales."
+              : "ESCUDO DESACTIVADO: Retornando a monitoreo pasivo estándar.";
+        });
+        _voiceEngine.speak(_shieldActive ? "Escudo de red activado." : "Escudo desactivado.");
+      },
+      child: Text(_shieldActive ? "ESCUDO ACTIVO" : "ACTIVAR ESCUDO", style: const TextStyle(fontWeight: FontWeight.bold)),
     );
   }
 }
@@ -181,13 +275,4 @@ class RobotFacePainter extends CustomPainter {
     mouthPath.moveTo(startX, midY);
     for (double i = startX; i <= endX; i += 4) {
       double wave = (state == "THREAT") 
-          ? math.sin((i + pulseValue * 45)) * 10 
-          : math.sin((i + pulseValue * 15)) * (3 + pulseValue * 3);
-      mouthPath.lineTo(i, midY + wave);
-    }
-    canvas.drawPath(mouthPath, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant RobotFacePainter oldDelegate) => true;
-}
+        
