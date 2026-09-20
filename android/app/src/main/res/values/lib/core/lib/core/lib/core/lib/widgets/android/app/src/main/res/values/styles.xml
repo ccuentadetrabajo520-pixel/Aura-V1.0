@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tema de transición que se muestra al abrir Aura -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+    <!-- Tema predeterminado de la interfaz tras iniciar -->
+    <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>
