@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'core/security_engine.dart';
 import 'core/network_auditor.dart';
 import 'core/voice_engine.dart';
+import 'core/ai_brain.dart';
 import 'widgets/radar_waves.dart';
 
 void main() => runApp(const AuraApp());
@@ -35,6 +36,8 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
   final AuraSecurityEngine _securityEngine = AuraSecurityEngine();
   final AuraNetworkAuditor _networkAuditor = AuraNetworkAuditor();
   final AuraVoiceEngine _voiceEngine = AuraVoiceEngine();
+  final AuraAIBrain _aiBrain = AuraAIBrain();
+  final TextEditingController _inputController = TextEditingController();
   
   String _securityStatus = "SECURE"; 
   String _liveConsoleLogs = "SISTEMA AURA: Núcleo defensivo activo e íntegro.";
@@ -48,7 +51,6 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
 
-    // Escucha activa y respuesta por voz ante amenazas en tiempo real
     _securityEngine.monitorDeviceIntegrity().listen((event) {
       if (_securityStatus != "SCANNING") {
         setState(() {
@@ -68,6 +70,7 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
   void dispose() {
     _pulseController.dispose();
     _voiceEngine.stop();
+    _inputController.dispose();
     super.dispose();
   }
 
@@ -96,6 +99,23 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
     _voiceEngine.speak(safetyCheck 
         ? "Análisis completado. Dispositivo seguro." 
         : "Alerta. Se han detectado riesgos potenciales en el canal de red.");
+  }
+
+  void _handleAIQuery() async {
+    final query = _inputController.text.trim();
+    if (query.isEmpty) return;
+
+    _inputController.clear();
+    setState(() {
+      _liveConsoleLogs = "Aura procesando consulta analítica...";
+    });
+
+    final response = await _aiBrain.analyzeCyberThreat(query);
+    
+    setState(() {
+      _liveConsoleLogs = response;
+    });
+    _voiceEngine.speak(response);
   }
 
   @override
@@ -155,6 +175,29 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
                   style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Colors.white70),
                   textAlign: Center,
                 ),
+              ),
+            ),
+            // Consola de entrada de texto interactiva para hablar con Aura
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _inputController,
+                      decoration: const InputDecoration(
+                        hintText: "Consulta de ciberdefensa...",
+                        hintStyle: TextStyle(fontSize: 12, color: Colors.white38),
+                        border: InputBorder.none,
+                      ),
+                      style: const TextStyle(fontSize: 13, color: Colors.white),
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.send, color: _getCoreColor()),
+                    onPressed: _handleAIQuery,
+                  ),
+                ],
               ),
             ),
             Padding(
@@ -240,39 +283,4 @@ class RobotFacePainter extends CustomPainter {
       ..style = PaintingStyle.fill;
 
     final facePath = Path()
-      ..moveTo(size.width * 0.25, size.height * 0.15)
-      ..lineTo(size.width * 0.75, size.height * 0.15)
-      ..lineTo(size.width * 0.83, size.height * 0.48)
-      ..lineTo(size.width * 0.53, size.height * 0.88)
-      ..lineTo(size.width * 0.47, size.height * 0.88)
-      ..lineTo(size.width * 0.17, size.height * 0.48)
-      ..close();
-    
-    canvas.drawPath(facePath, glowPaint);
-    canvas.drawPath(facePath, paint);
-
-    canvas.drawLine(Offset(size.width * 0.38, size.height * 0.23), Offset(size.width * 0.62, size.height * 0.23), paint);
-
-    if (state == "SCANNING") {
-      double scanY = size.height * 0.15 + (size.height * 0.70 * pulseValue);
-      final scanLine = Paint()..color = themeColor..strokeWidth = 2.5;
-      canvas.drawLine(Offset(size.width * 0.18, scanY), Offset(size.width * 0.82, scanY), scanLine);
-    }
-
-    final leftEye = Rect.fromLTWH(size.width * 0.30, size.height * 0.42, 40, 10 + (2 * pulseValue));
-    final rightEye = Rect.fromLTWH(size.width * 0.58, size.height * 0.42, 40, 10 + (2 * pulseValue));
-    
-    paint.style = PaintingStyle.fill;
-    canvas.drawOval(leftEye, paint);
-    canvas.drawOval(rightEye, paint);
-
-    paint.style = PaintingStyle.stroke;
-    final mouthPath = Path();
-    double startX = size.width * 0.42;
-    double endX = size.width * 0.58;
-    double midY = size.height * 0.70;
-    
-    mouthPath.moveTo(startX, midY);
-    for (double i = startX; i <= endX; i += 4) {
-      double wave = (state == "THREAT") 
-        
+      ..moveTo(size.width * 0.25, size.height * 0.15)..lineTo(size.width * 0.75, size.height * 0.15)..lineTo(size.width * 0.83, size.height * 0.48)..lineTo(size.width * 0.53, size.height * 0.88)..lineTo(size.width * 0.47, size.height * 0.88)..lineTo(size.width * 0.17, size.height * 0.48)..close();canvas.drawPath(facePath, glowPaint);canvas.drawPath(facePath, paint);canvas.drawLine(Offset(size.width * 0.38, size.height * 0.23), Offset(size.width * 0.62, size.height * 0.23), paint);if (state == "SCANNING") {double scanY = size.height * 0.15 + (size.height * 0.70 * pulseValue);final scanLine = Paint()..color = themeColor..strokeWidth = 2.5;canvas.drawLine(Offset(size.width * 0.18, scanY), Offset(size.width * 0.82, scanY), scanLine);}final leftEye = Rect.fromLTWH(size.width * 0.30, size.height * 0.42, 40, 10 + (2 * pulseValue));final rightEye = Rect.fromLTWH(size.width * 0.58, size.height * 0.42, 40, 10 + (2 * pulseValue));paint.style = PaintingStyle.fill;canvas.drawOval(leftEye, paint);canvas.drawOval(rightEye, paint);paint.style = PaintingStyle.stroke;final mouthPath = Path();double startX = size.width * 0.42;double endX = size.width * 0.58;double midY = size.height * 0.70;mouthPath.moveTo(startX, midY);for (double i = startX; i += 4) {double wave = (state == "THREAT")? math.sin((i + pulseValue * 45)) * 10: math.sin((i + pulseValue * 15)) * (3 + pulseValue * 3);mouthPath.lineTo(i, midY + wave);}canvas.drawPath(mouthPath, paint);}@overridebool shouldRepaint(covariant RobotFacePainter oldDelegate) => true;}
