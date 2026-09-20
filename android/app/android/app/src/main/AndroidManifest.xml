@@ -30,7 +30,18 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+
+        <!-- Servicio VPN Nativo Real para el Firewall y DNS de Aura -->
+        <service
+            android:name=".AuraVpnService"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
         
+        <!-- Forzar el uso de la arquitectura moderna de Flutter -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
