@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
-import 'core/security_engine.dart';
-import 'core/network_auditor.dart';
-import 'core/voice_engine.dart';
-import 'core/ai_brain.dart';
+import 'security_engine.dart';
+import 'network_auditor.dart';
+import 'voice_engine.dart';
+import 'ai_brain.dart';
+import 'radar_waves.dart';
 
 void main() => runApp(const AuraApp());
 
@@ -140,13 +141,20 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
                 child: AnimatedBuilder(
                   animation: _pulseController,
                   builder: (context, child) {
-                    return CustomPaint(
-                      painter: RobotFacePainter(
-                        pulseValue: _pulseController.value,
-                        themeColor: _getCoreColor(),
-                        state: _securityStatus,
-                      ),
-                      size: const Size(290, 350),
+                    return Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        if (_securityStatus == "SCANNING")
+                          AuraRadarWaves(animationValue: _pulseController.value, themeColor: _getCoreColor()),
+                        CustomPaint(
+                          painter: RobotFacePainter(
+                            pulseValue: _pulseController.value,
+                            themeColor: _getCoreColor(),
+                            state: _securityStatus,
+                          ),
+                          size: const Size(290, 350),
+                        ),
+                      ],
                     );
                   },
                 ),
@@ -169,6 +177,7 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
                 ),
               ),
             ),
+            // Consola de entrada de texto interactiva para hablar con Aura
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
               child: Row(
@@ -274,15 +283,4 @@ class RobotFacePainter extends CustomPainter {
       ..style = PaintingStyle.fill;
 
     final facePath = Path()
-      ..moveTo(size.width * 0.25, size.height * 0.15)
-      ..lineTo(size.width * 0.75, size.height * 0.15)
-      ..lineTo(size.width * 0.83, size.height * 0.48)
-      ..lineTo(size.width * 0.53, size.height * 0.88)
-      ..lineTo(size.width * 0.47, size.height * 0.88)
-      ..lineTo(size.width * 0.17, size.height * 0.48)
-      ..close();
-    
-    canvas.drawPath(facePath, glowPaint);
-    canvas.drawPath(facePath, paint);
-
-    canvas.drawLine(Offset(size.width * 0.38, size.height * 0.23), Offset(size.width * 0.62, size.height * 0.23), paint);if (state == "SCANNING") {double scanY = size.height * 0.15 + (size.height * 0.70 * pulseValue);final scanLine = Paint()..color = themeColor..strokeWidth = 2.5;canvas.drawLine(Offset(size.width * 0.18, scanY), Offset(size.width * 0.82, scanY), scanLine);}final leftEye = Rect.fromLTWH(size.width * 0.30, size.height * 0.42, 40, 10 + (2 * pulseValue));final rightEye = Rect.fromLTWH(size.width * 0.58, size.height * 0.42, 40, 10 + (2 * pulseValue));paint.style = PaintingStyle.fill;canvas.drawOval(leftEye, paint);canvas.drawOval(rightEye, paint);paint.style = PaintingStyle.stroke;final mouthPath = Path();double startX = size.width * 0.42;double endX = size.width * 0.58;double midY = size.height * 0.70;mouthPath.moveTo(startX, midY);for (double i = startX; i <= endX; i += 4) {double wave = (state == "THREAT")? math.sin((i + pulseValue * 45)) * 10: math.sin((i + pulseValue * 15)) * (3 + pulseValue * 3);mouthPath.lineTo(i, midY + wave);}canvas.drawPath(mouthPath, paint);}@overridebool shouldRepaint(covariant RobotFacePainter oldDelegate) => true;}
+      ..moveTo(size.width * 0.25, size.height * 0.15)..lineTo(size.width * 0.75, size.height * 0.15)..lineTo(size.width * 0.83, size.height * 0.48)..lineTo(size.width * 0.53, size.height * 0.88)..lineTo(size.width * 0.47, size.height * 0.88)..lineTo(size.width * 0.17, size.height * 0.48)..close();canvas.drawPath(facePath, glowPaint);canvas.drawPath(facePath, paint);canvas.drawLine(Offset(size.width * 0.38, size.height * 0.23), Offset(size.width * 0.62, size.height * 0.23), paint);if (state == "SCANNING") {double scanY = size.height * 0.15 + (size.height * 0.70 * pulseValue);final scanLine = Paint()..color = themeColor..strokeWidth = 2.5;canvas.drawLine(Offset(size.width * 0.18, scanY), Offset(size.width * 0.82, scanY), scanLine);}final leftEye = Rect.fromLTWH(size.width * 0.30, size.height * 0.42, 40, 10 + (2 * pulseValue));final rightEye = Rect.fromLTWH(size.width * 0.58, size.height * 0.42, 40, 10 + (2 * pulseValue));paint.style = PaintingStyle.fill;canvas.drawOval(leftEye, paint);canvas.drawOval(rightEye, paint);paint.style = PaintingStyle.stroke;final mouthPath = Path();double startX = size.width * 0.42;double endX = size.width * 0.58;double midY = size.height * 0.70;mouthPath.moveTo(startX, midY);for (double i = startX; i += 4) {double wave = (state == "THREAT")? math.sin((i + pulseValue * 45)) * 10: math.sin((i + pulseValue * 15)) * (3 + pulseValue * 3);mouthPath.lineTo(i, midY + wave);}canvas.drawPath(mouthPath, paint);}@overridebool shouldRepaint(covariant RobotFacePainter oldDelegate) => true;}
