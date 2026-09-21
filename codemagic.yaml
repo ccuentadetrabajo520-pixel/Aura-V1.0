@@ -15,15 +15,11 @@ workflows:
       - name: Set up local.properties
         script: |
           echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
-      - name: Get Flutter packages
-        script: |
-          flutter pub get
-      - name: Verify Gemini API key
-        script: |
-          test -n "$GEMINI_API_KEY" || { echo "GEMINI_API_KEY is required"; exit 1; }
       - name: Build Android APK (Release)
         script: |
-          flutter build apk --release --no-shrink --dart-define=GEMINI_API_KEY="$GEMINI_API_KEY"
+          flutter clean
+          flutter pub get
+          flutter build apk --release
     artifacts:
       - build/app/outputs/flutter-apk/*.apk
       
