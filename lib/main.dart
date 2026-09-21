@@ -173,7 +173,7 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
                 child: Text(
                   _liveConsoleLogs,
                   style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Colors.white70),
-                  textAlign: Center,
+                  textAlign: TextAlign.center,
                 ),
               ),
             ),

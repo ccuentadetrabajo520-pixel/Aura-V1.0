@@ -5,6 +5,7 @@ workflows:
     instance_type: mac_mini_m1
     environment:
       flutter: stable
+      java: 21
     triggering:
       events:
         - push
@@ -16,10 +17,13 @@ workflows:
           echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
       - name: Get Flutter packages
         script: |
-          flutter packages pub get
+          flutter pub get
+      - name: Verify Gemini API key
+        script: |
+          test -n "$GEMINI_API_KEY" || { echo "GEMINI_API_KEY is required"; exit 1; }
       - name: Build Android APK (Release)
         script: |
-          flutter build apk --release --no-shrink
+          flutter build apk --release --no-shrink --dart-define=GEMINI_API_KEY="$GEMINI_API_KEY"
     artifacts:
       - build/app/outputs/flutter-apk/*.apk
       
