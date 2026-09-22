@@ -8,9 +8,8 @@ import android.content.pm.ApplicationInfo
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
-import java.io.File
 
-class MainActivity: FlutterActivity() {
+class MainActivity : FlutterActivity() {
     private val SHIELD_CHANNEL = "com.ciberdefensa.aura/shield"
     private val TELEMETRY_CHANNEL = "com.ciberdefensa.aura/telemetry"
 
@@ -39,19 +38,19 @@ class MainActivity: FlutterActivity() {
                         if ((applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM) == 0) {
                             val permisosSolicitados = pkg.requestedPermissions
                             if (permisosSolicitados != null) {
-                                val coincidenPermissions = mutableListOf<String>()
+                                val coincidenciasRiesgo = mutableListOf<String>()
                                 for (permiso in permisosSolicitados) {
                                     if (permisosCriticos.contains(permiso)) {
-                                        coincidenPermissions.add(permiso)
+                                        coincidenciasRiesgo.add(permiso)
                                     }
                                 }
 
-                                if (coincidenPermissions.isNotEmpty()) {
+                                if (coincidenciasRiesgo.isNotEmpty()) {
                                     val datosApp = mapOf(
                                         "name" to applicationInfo.loadLabel(pm).toString(),
                                         "package" to pkg.packageName,
                                         "target_sdk" to applicationInfo.targetSdkVersion,
-                                        "risk_permissions" to coincidenPermissions,
+                                        "risk_permissions" to coincidenciasRiesgo,
                                     )
                                     appRiskList.add(datosApp)
                                 }
@@ -70,12 +69,12 @@ class MainActivity: FlutterActivity() {
                         dataPath.contains("parallel") ||
                         dataPath.contains("dual") ||
                         dataPath.contains("multiple")
-                    val report = mapOf(
+                    val integrityReport = mapOf(
                         "isDebuggerConnected" to isDebugActive,
                         "isVirtualEnvironment" to isCloned,
                         "isSecure" to (!isDebugActive && !isCloned),
                     )
-                    result.success(report)
+                    result.success(integrityReport)
                 }
 
                 else -> result.notImplemented()
