@@ -269,10 +269,17 @@ class RobotFacePainter extends CustomPainter {
   final Color themeColor;
   final String state;
 
-  RobotFacePainter({required this.pulseValue, required this.themeColor, required this.state});
+  RobotFacePainter({
+    required this.pulseValue,
+    required this.themeColor,
+    required this.state,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
+    final bool isScanning = state == "SCANNING";
+    final bool isThreat = state == "THREAT";
+
     final paint = Paint()
       ..color = themeColor.withOpacity(0.85)
       ..style = PaintingStyle.stroke
@@ -283,4 +290,69 @@ class RobotFacePainter extends CustomPainter {
       ..style = PaintingStyle.fill;
 
     final facePath = Path()
-      ..moveTo(size.width * 0.25, size.height * 0.15)..lineTo(size.width * 0.75, size.height * 0.15)..lineTo(size.width * 0.83, size.height * 0.48)..lineTo(size.width * 0.53, size.height * 0.88)..lineTo(size.width * 0.47, size.height * 0.88)..lineTo(size.width * 0.17, size.height * 0.48)..close();canvas.drawPath(facePath, glowPaint);canvas.drawPath(facePath, paint);canvas.drawLine(Offset(size.width * 0.38, size.height * 0.23), Offset(size.width * 0.62, size.height * 0.23), paint);if (state == "SCANNING") {double scanY = size.height * 0.15 + (size.height * 0.70 * pulseValue);final scanLine = Paint()..color = themeColor..strokeWidth = 2.5;canvas.drawLine(Offset(size.width * 0.18, scanY), Offset(size.width * 0.82, scanY), scanLine);}final leftEye = Rect.fromLTWH(size.width * 0.30, size.height * 0.42, 40, 10 + (2 * pulseValue));final rightEye = Rect.fromLTWH(size.width * 0.58, size.height * 0.42, 40, 10 + (2 * pulseValue));paint.style = PaintingStyle.fill;canvas.drawOval(leftEye, paint);canvas.drawOval(rightEye, paint);paint.style = PaintingStyle.stroke;final mouthPath = Path();double startX = size.width * 0.42;double endX = size.width * 0.58;double midY = size.height * 0.70;mouthPath.moveTo(startX, midY);for (double i = startX; i += 4) {double wave = (state == "THREAT")? math.sin((i + pulseValue * 45)) * 10: math.sin((i + pulseValue * 15)) * (3 + pulseValue * 3);mouthPath.lineTo(i, midY + wave);}canvas.drawPath(mouthPath, paint);}@overridebool shouldRepaint(covariant RobotFacePainter oldDelegate) => true;}
+      ..moveTo(size.width * 0.25, size.height * 0.15)
+      ..lineTo(size.width * 0.75, size.height * 0.15)
+      ..lineTo(size.width * 0.83, size.height * 0.48)
+      ..lineTo(size.width * 0.53, size.height * 0.88)
+      ..lineTo(size.width * 0.47, size.height * 0.88)
+      ..lineTo(size.width * 0.17, size.height * 0.48)
+      ..close();
+
+    canvas.drawPath(facePath, glowPaint);
+    canvas.drawPath(facePath, paint);
+    canvas.drawLine(
+      Offset(size.width * 0.38, size.height * 0.23),
+      Offset(size.width * 0.62, size.height * 0.23),
+      paint,
+    );
+
+    if (isScanning) {
+      final double scanY =
+          size.height * 0.15 + (size.height * 0.70 * pulseValue);
+      final scanLine = Paint()
+        ..color = themeColor
+        ..strokeWidth = 2.5;
+      canvas.drawLine(
+        Offset(size.width * 0.18, scanY),
+        Offset(size.width * 0.82, scanY),
+        scanLine,
+      );
+    }
+
+    final leftEye = Rect.fromLTWH(
+      size.width * 0.30,
+      size.height * 0.42,
+      40,
+      10 + (2 * pulseValue),
+    );
+    final rightEye = Rect.fromLTWH(
+      size.width * 0.58,
+      size.height * 0.42,
+      40,
+      10 + (2 * pulseValue),
+    );
+
+    paint.style = PaintingStyle.fill;
+    canvas.drawOval(leftEye, paint);
+    canvas.drawOval(rightEye, paint);
+
+    paint.style = PaintingStyle.stroke;
+    final mouthPath = Path();
+    final double startX = size.width * 0.42;
+    final double endX = size.width * 0.58;
+    final double midY = size.height * 0.70;
+    mouthPath.moveTo(startX, midY);
+
+    for (double x = startX; x <= endX; x += 4) {
+      final double wave = isThreat
+          ? math.sin(x + pulseValue * 45) * 10
+          : math.sin(x + pulseValue * 15) * (3 + pulseValue * 3);
+      mouthPath.lineTo(x, midY + wave);
+    }
+
+    canvas.drawPath(mouthPath, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant RobotFacePainter oldDelegate) => true;
+}
