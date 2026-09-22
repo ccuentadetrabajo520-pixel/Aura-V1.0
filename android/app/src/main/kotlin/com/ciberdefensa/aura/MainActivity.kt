@@ -9,7 +9,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
-class MainActivity : FlutterActivity() {
+class MainActivity: FlutterActivity() {
     private val SHIELD_CHANNEL = "com.ciberdefensa.aura/shield"
     private val TELEMETRY_CHANNEL = "com.ciberdefensa.aura/telemetry"
 
