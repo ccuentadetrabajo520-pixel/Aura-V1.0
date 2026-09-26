@@ -1,5 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.ciberdefensa.aura">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
     
     <!-- Permisos requeridos para el asistente de IA y el escudo de ciberdefensa -->
     <uses-permission android:name="android.permission.INTERNET" />

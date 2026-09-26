@@ -285,4 +285,57 @@ class RobotFacePainter extends CustomPainter {
     canvas.drawPath(facePath, glowPaint);
     canvas.drawPath(facePath, paint);
 
-    canvas.drawLine(Offset(size.width * 0.38, size.height * 0.23), Offset(size.width * 0.62, size.height * 0.23), paint);if (state == "SCANNING") {double scanY = size.height * 0.15 + (size.height * 0.70 * pulseValue);final scanLine = Paint()..color = themeColor..strokeWidth = 2.5;canvas.drawLine(Offset(size.width * 0.18, scanY), Offset(size.width * 0.82, scanY), scanLine);}final leftEye = Rect.fromLTWH(size.width * 0.30, size.height * 0.42, 40, 10 + (2 * pulseValue));final rightEye = Rect.fromLTWH(size.width * 0.58, size.height * 0.42, 40, 10 + (2 * pulseValue));paint.style = PaintingStyle.fill;canvas.drawOval(leftEye, paint);canvas.drawOval(rightEye, paint);paint.style = PaintingStyle.stroke;final mouthPath = Path();double startX = size.width * 0.42;double endX = size.width * 0.58;double midY = size.height * 0.70;mouthPath.moveTo(startX, midY);for (double i = startX; i <= endX; i += 4) {double wave = (state == "THREAT")? math.sin((i + pulseValue * 45)) * 10: math.sin((i + pulseValue * 15)) * (3 + pulseValue * 3);mouthPath.lineTo(i, midY + wave);}canvas.drawPath(mouthPath, paint);}@overridebool shouldRepaint(covariant RobotFacePainter oldDelegate) => true;}
+    canvas.drawLine(
+      Offset(size.width * 0.38, size.height * 0.23),
+      Offset(size.width * 0.62, size.height * 0.23),
+      paint,
+    );
+
+    if (state == "SCANNING") {
+      final scanY = size.height * 0.15 + (size.height * 0.70 * pulseValue);
+      final scanLine = Paint()
+        ..color = themeColor
+        ..strokeWidth = 2.5;
+      canvas.drawLine(
+        Offset(size.width * 0.18, scanY),
+        Offset(size.width * 0.82, scanY),
+        scanLine,
+      );
+    }
+
+    final leftEye = Rect.fromLTWH(
+      size.width * 0.30,
+      size.height * 0.42,
+      40,
+      10 + (2 * pulseValue),
+    );
+    final rightEye = Rect.fromLTWH(
+      size.width * 0.58,
+      size.height * 0.42,
+      40,
+      10 + (2 * pulseValue),
+    );
+    paint.style = PaintingStyle.fill;
+    canvas.drawOval(leftEye, paint);
+    canvas.drawOval(rightEye, paint);
+    paint.style = PaintingStyle.stroke;
+
+    final mouthPath = Path();
+    final startX = size.width * 0.42;
+    final endX = size.width * 0.58;
+    final midY = size.height * 0.70;
+    mouthPath.moveTo(startX, midY);
+
+    for (double x = startX; x <= endX; x += 4) {
+      final wave = state == "THREAT"
+          ? math.sin(x + pulseValue * 45) * 10
+          : math.sin(x + pulseValue * 15) * (3 + pulseValue * 3);
+      mouthPath.lineTo(x, midY + wave);
+    }
+
+    canvas.drawPath(mouthPath, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant RobotFacePainter oldDelegate) => true;
+}
