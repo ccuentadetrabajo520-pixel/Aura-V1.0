@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'dart:math' as math;
 import 'security_engine.dart';
-import 'network_auditor.dart';
 import 'voice_engine.dart';
 import 'ai_brain.dart';
 import 'radar_waves.dart';
+import 'secure_vault.dart';
 
 void main() => runApp(const AuraApp());
 
@@ -31,17 +32,20 @@ class AuraCoreScreen extends StatefulWidget {
   State<AuraCoreScreen> createState() => _AuraCoreScreenState();
 }
 
-class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProviderStateMixin {
+class _AuraCoreScreenState extends State<AuraCoreScreen>
+    with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
+  late StreamSubscription<Map<String, dynamic>> _integritySubscription;
   final AuraSecurityEngine _securityEngine = AuraSecurityEngine();
-  final AuraNetworkAuditor _networkAuditor = AuraNetworkAuditor();
   final AuraVoiceEngine _voiceEngine = AuraVoiceEngine();
   final AuraAIBrain _aiBrain = AuraAIBrain();
+  final AuraSecureVault _secureVault = AuraSecureVault();
   final TextEditingController _inputController = TextEditingController();
-  
-  String _securityStatus = "SECURE"; 
+
+  String _securityStatus = "SECURE";
   String _liveConsoleLogs = "SISTEMA AURA: Núcleo defensivo activo e íntegro.";
   bool _shieldActive = false;
+  String? _lastRecordedIntegrityLog;
 
   @override
   void initState() {
@@ -51,17 +55,28 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
 
-    _securityEngine.monitorDeviceIntegrity().listen((event) {
-      if (_securityStatus != "SCANNING") {
-        setState(() {
-          _liveConsoleLogs = event["logs"];
-          if (event["level"] == SystemThreatLevel.critical) {
-            _securityStatus = "THREAT";
-            _voiceEngine.speak("Alerta crítica detectada. Posible inyección de memoria activa.");
-          } else {
-            _securityStatus = _shieldActive ? "THREAT" : "SECURE";
-          }
-        });
+    _integritySubscription =
+        _securityEngine.monitorDeviceIntegrity().listen((event) {
+      if (!mounted || _securityStatus == "SCANNING") return;
+
+      final level = event["level"] as SystemThreatLevel;
+      final logs = event["logs"] as String;
+      setState(() {
+        _liveConsoleLogs = logs;
+        _securityStatus = level == SystemThreatLevel.critical
+            ? "THREAT"
+            : level == SystemThreatLevel.warning
+                ? "WARNING"
+                : "SECURE";
+      });
+
+      if (level != SystemThreatLevel.secure &&
+          logs != _lastRecordedIntegrityLog) {
+        _lastRecordedIntegrityLog = logs;
+        _writeSecureLog(logs);
+      }
+      if (level == SystemThreatLevel.critical) {
+        _voiceEngine.speak("Alerta crítica de integridad detectada.");
       }
     });
   }
@@ -69,6 +84,7 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
   @override
   void dispose() {
     _pulseController.dispose();
+    _integritySubscription.cancel();
     _voiceEngine.stop();
     _inputController.dispose();
     super.dispose();
@@ -76,29 +92,32 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
 
   Color _getCoreColor() {
     if (_securityStatus == "SCANNING") return const Color(0xFF06B6D4);
-    if (_securityStatus == "THREAT" || _shieldActive) return const Color(0xFFEF4444);
+    if (_securityStatus == "THREAT" || _shieldActive)
+      return const Color(0xFFEF4444);
+    if (_securityStatus == "WARNING") return const Color(0xFFF59E0B);
     return const Color(0xFF10B981);
   }
 
   void _triggerLocalScan() async {
     setState(() {
       _securityStatus = "SCANNING";
-      _liveConsoleLogs = "INICIANDO AUDITORÍA INTERNA: Analizando firmas criptográficas y telemetría local...";
+      _liveConsoleLogs =
+          "INICIANDO AUDITORÍA INTERNA: Analizando firmas criptográficas y telemetría local...";
     });
     _voiceEngine.speak("Iniciando auditoría interna del sistema.");
-    
-    bool safetyCheck = await _networkAuditor.verifyGatewaySafety();
-    
+
+    final response = await _aiBrain.analyzeCyberThreat(
+      'EjecutaEscaneoDispositivo ahora y resume únicamente los hallazgos devueltos por la telemetría.',
+    );
+    if (!mounted) return;
+
     setState(() {
-      _securityStatus = safetyCheck ? "SECURE" : "THREAT";
-      _liveConsoleLogs = safetyCheck 
-          ? "ESCANEO COMPLETADO: No se encontraron anomalías en memoria ni aplicaciones espía."
-          : "ALERTA: Gateway de red comprometido o sospechoso.";
+      _securityStatus = "WARNING";
+      _liveConsoleLogs = response;
     });
 
-    _voiceEngine.speak(safetyCheck 
-        ? "Análisis completado. Dispositivo seguro." 
-        : "Alerta. Se han detectado riesgos potenciales en el canal de red.");
+    await _writeSecureLog('Escaneo: $response');
+    _voiceEngine.speak(response);
   }
 
   void _handleAIQuery() async {
@@ -111,11 +130,53 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
     });
 
     final response = await _aiBrain.analyzeCyberThreat(query);
-    
+    if (!mounted) return;
+
     setState(() {
       _liveConsoleLogs = response;
     });
+    await _writeSecureLog('Consulta: $query\nRespuesta: $response');
     _voiceEngine.speak(response);
+  }
+
+  Future<void> _toggleNetworkShield() async {
+    final requestedState = !_shieldActive;
+    setState(() {
+      _securityStatus = "SCANNING";
+      _liveConsoleLogs = requestedState
+          ? "Solicitando autorización y arranque del escudo..."
+          : "Deteniendo el escudo...";
+    });
+
+    try {
+      final active = await _aiBrain.setShieldActive(requestedState);
+      if (!mounted) return;
+      setState(() {
+        if (active) _shieldActive = requestedState;
+        _securityStatus = active ? "SECURE" : "THREAT";
+        _liveConsoleLogs = !active
+            ? "No se pudo cambiar el estado del escudo."
+            : requestedState
+                ? "Escudo VPN activo."
+                : "Escudo detenido.";
+      });
+      await _writeSecureLog(_liveConsoleLogs);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _securityStatus = "THREAT";
+        _liveConsoleLogs = "No se pudo cambiar el estado del escudo.";
+      });
+      await _writeSecureLog('Error de escudo: $error');
+    }
+  }
+
+  Future<void> _writeSecureLog(String message) async {
+    try {
+      await _secureVault.writeLogSecurely(message);
+    } catch (error) {
+      debugPrint('No se pudo persistir el registro seguro: $error');
+    }
   }
 
   @override
@@ -129,11 +190,10 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
               child: Text(
                 'AURA AI • SISTEMA DE CIBERDEFENSA',
                 style: TextStyle(
-                  letterSpacing: 3, 
-                  fontWeight: FontWeight.bold, 
-                  color: _getCoreColor().withOpacity(0.9),
-                  fontSize: 13
-                ),
+                    letterSpacing: 3,
+                    fontWeight: FontWeight.bold,
+                    color: _getCoreColor().withOpacity(0.9),
+                    fontSize: 13),
               ),
             ),
             Expanded(
@@ -145,7 +205,9 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
                       alignment: Alignment.center,
                       children: [
                         if (_securityStatus == "SCANNING")
-                          AuraRadarWaves(animationValue: _pulseController.value, themeColor: _getCoreColor()),
+                          AuraRadarWaves(
+                              animationValue: _pulseController.value,
+                              themeColor: _getCoreColor()),
                         CustomPaint(
                           painter: RobotFacePainter(
                             pulseValue: _pulseController.value,
@@ -172,14 +234,18 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
                 ),
                 child: Text(
                   _liveConsoleLogs,
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Colors.white70),
+                  style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 11,
+                      color: Colors.white70),
                   textAlign: TextAlign.center,
                 ),
               ),
             ),
             // Consola de entrada de texto interactiva para hablar con Aura
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
               child: Row(
                 children: [
                   Expanded(
@@ -187,7 +253,8 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
                       controller: _inputController,
                       decoration: const InputDecoration(
                         hintText: "Consulta de ciberdefensa...",
-                        hintStyle: TextStyle(fontSize: 12, color: Colors.white38),
+                        hintStyle:
+                            TextStyle(fontSize: 12, color: Colors.white38),
                         border: InputBorder.none,
                       ),
                       style: const TextStyle(fontSize: 13, color: Colors.white),
@@ -207,12 +274,14 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
                 decoration: BoxDecoration(
                   color: const Color(0xFF0F172A),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: _getCoreColor().withOpacity(0.15), width: 1.5),
+                  border: Border.all(
+                      color: _getCoreColor().withOpacity(0.15), width: 1.5),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _buildActionButton("ESCANEAR", _triggerLocalScan, const Color(0xFF06B6D4)),
+                    _buildActionButton(
+                        "ESCANEAR", _triggerLocalScan, const Color(0xFF06B6D4)),
                     _buildShieldButton(),
                   ],
                 ),
@@ -224,7 +293,8 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
     );
   }
 
-  Widget _buildActionButton(String label, VoidCallback action, Color buttonColor) {
+  Widget _buildActionButton(
+      String label, VoidCallback action, Color buttonColor) {
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
         backgroundColor: const Color(0xFF1E293B),
@@ -242,24 +312,20 @@ class _AuraCoreScreenState extends State<AuraCoreScreen> with SingleTickerProvid
   Widget _buildShieldButton() {
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
-        backgroundColor: _shieldActive ? const Color(0xFFEF4444) : const Color(0xFF1E293B),
+        backgroundColor:
+            _shieldActive ? const Color(0xFFEF4444) : const Color(0xFF1E293B),
         foregroundColor: _shieldActive ? Colors.white : const Color(0xFF10B981),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: _shieldActive ? Colors.transparent : const Color(0xFF10B981).withOpacity(0.4)),
+          side: BorderSide(
+              color: _shieldActive
+                  ? Colors.transparent
+                  : const Color(0xFF10B981).withOpacity(0.4)),
         ),
       ),
-      onPressed: () {
-        setState(() {
-          _shieldActive = !_shieldActive;
-          _networkAuditor.toggleNetworkShield(_shieldActive);
-          _liveConsoleLogs = _shieldActive 
-              ? "ESCUDO DE RED ACTIVADO: Forzando aislamiento de puertos virtuales."
-              : "ESCUDO DESACTIVADO: Retornando a monitoreo pasivo estándar.";
-        });
-        _voiceEngine.speak(_shieldActive ? "Escudo de red activado." : "Escudo desactivado.");
-      },
-      child: Text(_shieldActive ? "ESCUDO ACTIVO" : "ACTIVAR ESCUDO", style: const TextStyle(fontWeight: FontWeight.bold)),
+      onPressed: _securityStatus == "SCANNING" ? null : _toggleNetworkShield,
+      child: Text(_shieldActive ? "ESCUDO ACTIVO" : "ACTIVAR ESCUDO",
+          style: const TextStyle(fontWeight: FontWeight.bold)),
     );
   }
 }

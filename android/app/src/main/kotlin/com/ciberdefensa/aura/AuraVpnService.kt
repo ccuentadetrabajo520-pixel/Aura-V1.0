@@ -1,57 +1,253 @@
 package com.ciberdefensa.aura
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.os.Build
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import hev.htproxy.TProxyService
+import java.io.File
 import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.Inet4Address
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.net.URL
+import java.util.Collections
+import java.util.HashSet
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
-class AuraVpnService : VpnService(), Runnable {
-    private var vpnThread: Thread? = null
+class AuraVpnService : VpnService() {
+    companion object {
+        const val ACTION_STATE = "com.ciberdefensa.aura.VPN_STATE"
+        private const val SOCKS5_HOST = "socks5.tun2socks.local"
+        private const val SOCKS5_PORT = 1080
+        private const val THREAT_FEED_URL =
+            "https://feodotracker.abuse.ch/downloads/ipblocklist.txt"
+        private const val NOTIFICATION_CHANNEL = "aura_vpn"
+        private const val NOTIFICATION_ID = 1080
+        private const val MAX_BLOCKED_IPS = 8192
+    }
+
+    private val worker = Executors.newSingleThreadExecutor()
+    private val feedRefresh: ScheduledExecutorService =
+        Executors.newSingleThreadScheduledExecutor()
+    private val blockedIps: MutableSet<String> =
+        Collections.synchronizedSet(HashSet())
+    private val startRequested = AtomicBoolean(false)
     private var vpnInterface: ParcelFileDescriptor? = null
+    @Volatile private var tunnelStarted = false
 
-    override fun onStartCommand(intent: android.content.Intent?, flags: Int, startId: Int): Int {
-        if (vpnThread == null) {
-            vpnThread = Thread(this, "AuraVpnThread")
-            vpnThread?.start()
+    override fun onStartCommand(
+        intent: android.content.Intent?,
+        flags: Int,
+        startId: Int,
+    ): Int {
+        startForeground(NOTIFICATION_ID, createNotification())
+        if (tunnelStarted) {
+            reportState(true, "El escudo VPN ya estaba activo.")
+        } else if (startRequested.compareAndSet(false, true)) {
+            worker.execute { startTunnel() }
         }
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {
-        if (vpnThread != null) {
-            vpnThread?.interrupt()
+        feedRefresh.shutdownNow()
+        worker.shutdownNow()
+        if (tunnelStarted) {
+            TProxyService.TProxyStopService()
+            tunnelStarted = false
         }
+        vpnInterface?.close()
+        vpnInterface = null
         super.onDestroy()
     }
 
-    override fun run() {
+    private fun startTunnel() {
+        var established: ParcelFileDescriptor? = null
         try {
+            val proxyAddress = resolveProxyAddress()
+            verifySocks5(proxyAddress)
+            replaceBlockedIps(downloadThreatFeed())
+
             val builder = Builder()
-            
-            // Redirige el tráfico IPv4 local hacia el túnel de Aura de forma real
-            builder.addAddress("10.0.0.2", 24)
-            builder.addRoute("0.0.0.0", 0)
-            
-            // Enrutamiento forzado hacia los servidores DNS Seguros de Cloudflare con bloqueo de malware
-            builder.addDnsServer("1.1.1.2") 
-            builder.addDnsServer("1.0.0.2")
-            
-            builder.setSession("AuraCyberdefenseShield")
+                .setSession("AuraCyberdefenseShield")
+                .setMtu(1500)
+                .addAddress("10.0.0.2", 24)
+                .addAddress("fd00::2", 64)
+                .addRoute("0.0.0.0", 0)
+                .addRoute("::", 0)
+                .addDnsServer("1.1.1.1")
+                .addDnsServer("1.0.0.1")
+                .addDnsServer("2606:4700:4700::1111")
+                .addDisallowedApplication(packageName)
 
-            vpnInterface = builder.establish()
-            Log.i("AuraVPN", "Escudo físico y Cortafuegos de Aura encendidos a nivel de hardware.")
+            established = builder.establish()
+                ?: throw IOException("Android no estableció la interfaz VPN.")
 
-            while (!Thread.interrupted()) {
-                Thread.sleep(2000)
+            val configFile = File(filesDir, "aura-hev-socks5.yml")
+            configFile.writeText(
+                """
+                tunnel:
+                  name: aura0
+                  mtu: 1500
+                  ipv4: 10.0.0.2
+                  ipv6: 'fd00::2'
+                  icmp: 'off'
+                socks5:
+                  port: $SOCKS5_PORT
+                  address: $proxyAddress
+                  udp: 'udp'
+                misc:
+                  log-level: error
+                """.trimIndent(),
+            )
+
+            vpnInterface = established
+            TProxyService.TProxySetBlockedIps(blockedIpSnapshot())
+            if (!TProxyService.TProxyStartService(configFile.absolutePath, established.fd)) {
+                throw IOException("El motor tun2socks no pudo iniciar.")
             }
+            tunnelStarted = true
+            scheduleFeedRefresh()
+            reportState(true, "Escudo VPN iniciado.")
+            Log.i("AuraVPN", "Hev tun2socks conectado al proxy SOCKS5.")
         } catch (e: Exception) {
-            Log.e("AuraVPN", "Fallo en la interfaz de red nativa: ${e.message}")
-        } finally {
-            try {
-                vpnInterface?.close()
-            } catch (e: IOException) {
-                // Manejo de excepciones en cierre de socket
+            Log.e("AuraVPN", "No se pudo iniciar el escudo VPN.", e)
+            if (tunnelStarted) TProxyService.TProxyStopService()
+            tunnelStarted = false
+            established?.close()
+            vpnInterface = null
+            startRequested.set(false)
+            reportState(false, e.message ?: "No se pudo iniciar el escudo.")
+            stopSelf()
+        }
+    }
+
+    private fun resolveProxyAddress(): String {
+        return InetAddress.getAllByName(SOCKS5_HOST)
+            .filterIsInstance<Inet4Address>()
+            .firstOrNull()
+            ?.hostAddress
+            ?: throw IOException("No se pudo resolver el endpoint SOCKS5 IPv4.")
+    }
+
+    private fun verifySocks5(address: String) {
+        Socket().use { socket ->
+            socket.connect(InetSocketAddress(address, SOCKS5_PORT), 5000)
+            socket.soTimeout = 5000
+            socket.getOutputStream().write(byteArrayOf(5, 1, 0))
+            socket.getOutputStream().flush()
+
+            val response = ByteArray(2)
+            var offset = 0
+            while (offset < response.size) {
+                val count = socket.getInputStream().read(response, offset, response.size - offset)
+                if (count < 0) throw IOException("El servidor SOCKS5 cerró el saludo.")
+                offset += count
+            }
+            if (response[0].toInt() != 5 || response[1].toInt() != 0) {
+                throw IOException("El servidor SOCKS5 no acepta el modo sin autenticación.")
             }
         }
+    }
+
+    private fun downloadThreatFeed(): Set<String> {
+        val connection = URL(THREAT_FEED_URL).openConnection() as HttpURLConnection
+        connection.connectTimeout = 15000
+        connection.readTimeout = 15000
+        connection.useCaches = false
+
+        try {
+            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+                throw IOException("El feed de amenazas devolvió HTTP ${connection.responseCode}.")
+            }
+            return connection.inputStream.bufferedReader().useLines { lines ->
+                lines.asSequence()
+                    .map { it.substringBefore('#').trim() }
+                    .filter(::isIpv4Address)
+                    .take(MAX_BLOCKED_IPS)
+                    .toCollection(HashSet())
+            }.also {
+                if (it.isEmpty()) throw IOException("El feed no contiene direcciones IPv4 válidas.")
+            }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun isIpv4Address(value: String): Boolean {
+        val parts = value.split('.')
+        if (parts.size != 4) return false
+        return parts.all { part ->
+            val octet = part.toIntOrNull()
+            octet != null && octet in 0..255 && octet.toString() == part
+        }
+    }
+
+    private fun replaceBlockedIps(updated: Set<String>) {
+        synchronized(blockedIps) {
+            blockedIps.clear()
+            blockedIps.addAll(updated)
+        }
+    }
+
+    private fun blockedIpSnapshot(): Array<String> = synchronized(blockedIps) {
+        blockedIps.toTypedArray()
+    }
+
+    private fun scheduleFeedRefresh() {
+        feedRefresh.scheduleWithFixedDelay({
+            try {
+                val updated = downloadThreatFeed()
+                replaceBlockedIps(updated)
+                TProxyService.TProxySetBlockedIps(blockedIpSnapshot())
+            } catch (e: Exception) {
+                Log.w("AuraVPN", "No se pudo actualizar el feed; se conserva la lista anterior.", e)
+            }
+        }, 1, 60, TimeUnit.MINUTES)
+    }
+
+    private fun reportState(started: Boolean, message: String) {
+        sendBroadcast(
+            android.content.Intent(ACTION_STATE)
+                .setPackage(packageName)
+                .putExtra("started", started)
+                .putExtra("message", message),
+        )
+    }
+
+    private fun createNotification(): Notification {
+        val manager = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            manager.getNotificationChannel(NOTIFICATION_CHANNEL) == null
+        ) {
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    NOTIFICATION_CHANNEL,
+                    "Aura VPN",
+                    NotificationManager.IMPORTANCE_LOW,
+                ),
+            )
+        }
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, NOTIFICATION_CHANNEL)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }
+        return builder
+            .setContentTitle("Aura Network Shield")
+            .setContentText("Conexión VPN protegida")
+            .setSmallIcon(android.R.drawable.stat_sys_warning)
+            .setOngoing(true)
+            .build()
     }
 }

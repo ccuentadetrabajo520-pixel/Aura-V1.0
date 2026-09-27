@@ -1,22 +1,61 @@
-// secure_vault.dart - Bóveda de Almacenamiento Ofuscada Local
-import 'dart:io';
 import 'dart:convert';
 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
 class AuraSecureVault {
-  // Guarda los logs cifrando el texto en un archivo local oculto del sistema operativo
+  static const String _entryPrefix = 'aura_threat_log_';
+  static const int _maxEntries = 500;
+
+  final FlutterSecureStorage _storage;
+
+  AuraSecureVault({FlutterSecureStorage? storage})
+      : _storage = storage ??
+            const FlutterSecureStorage(
+              aOptions: AndroidOptions(encryptedSharedPreferences: true),
+            );
+
   Future<void> writeLogSecurely(String logText) async {
-    try {
-      final directory = Directory.systemTemp; // Directorio aislado de ejecución segura
-      final file = File('${directory.path}/.aura_secure_vault.dat');
-      
-      // Convierte el texto a Base64 y aplica enmascaramiento binario real antes de escribir a disco
-      String rawJson = jsonEncode({"event": logText, "date": DateTime.now().toString()});
-      List<int> encryptedBytes = utf8.encode(rawJson).map((b) => b ^ 0x55).toList();
-      
-      await file.writeAsBytes(encryptedBytes, mode: FileMode.append);
-    } catch (e) {
-      // Manejo estricto de excepciones de bajo nivel
+    final key = '$_entryPrefix${DateTime.now().microsecondsSinceEpoch}';
+    final value = jsonEncode({
+      'event': logText,
+      'timestamp': DateTime.now().toUtc().toIso8601String(),
+    });
+
+    await _storage.write(key: key, value: value);
+    await _pruneOldEntries();
+  }
+
+  Future<List<Map<String, dynamic>>> readLogsSecurely() async {
+    final entries = await _storage.readAll();
+    final keys = entries.keys
+        .where((key) => key.startsWith(_entryPrefix))
+        .toList()
+      ..sort();
+
+    return [
+      for (final key in keys)
+        if (entries[key] case final String value)
+          Map<String, dynamic>.from(jsonDecode(value) as Map),
+    ];
+  }
+
+  Future<void> clearLogsSecurely() async {
+    final entries = await _storage.readAll();
+    for (final key
+        in entries.keys.where((key) => key.startsWith(_entryPrefix))) {
+      await _storage.delete(key: key);
+    }
+  }
+
+  Future<void> _pruneOldEntries() async {
+    final entries = await _storage.readAll();
+    final keys = entries.keys
+        .where((key) => key.startsWith(_entryPrefix))
+        .toList()
+      ..sort();
+    final excess = keys.length - _maxEntries;
+    for (final key in keys.take(excess > 0 ? excess : 0)) {
+      await _storage.delete(key: key);
     }
   }
 }
-

@@ -1,7 +1,11 @@
 package com.ciberdefensa.aura
 
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
 import android.net.VpnService
+import android.os.Build
 import android.os.Debug
 import android.content.pm.PackageManager
 import android.content.pm.ApplicationInfo
@@ -10,11 +14,27 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity: FlutterActivity() {
+    private companion object {
+        const val VPN_PERMISSION_REQUEST = 1081
+    }
+
     private val SHIELD_CHANNEL = "com.ciberdefensa.aura/shield"
     private val TELEMETRY_CHANNEL = "com.ciberdefensa.aura/telemetry"
+    private var pendingShieldResult: MethodChannel.Result? = null
+    private var vpnReceiverRegistered = false
+    private val vpnStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val started = intent?.getBooleanExtra("started", false) ?: false
+            val message = intent?.getStringExtra("message") ?: "Sin respuesta del servicio VPN."
+            pendingShieldResult?.success(started)
+            pendingShieldResult = null
+            if (!started) android.util.Log.e("AuraVPN", message)
+        }
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        registerVpnReceiver()
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -87,19 +107,13 @@ class MainActivity: FlutterActivity() {
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "startShield" -> {
-                    val intent = VpnService.prepare(applicationContext)
-                    if (intent != null) {
-                        startActivityForResult(intent, 0)
-                    } else {
-                        onActivityResult(0, RESULT_OK, null)
-                    }
-                    result.success(true)
+                    requestShieldStart(result)
                 }
 
                 "stopShield" -> {
                     val intent = Intent(this, AuraVpnService::class.java)
                     stopService(intent)
-                    result.success(false)
+                    result.success(true)
                 }
 
                 "getLatestBlockedIps" -> {
@@ -114,9 +128,65 @@ class MainActivity: FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (resultCode == RESULT_OK) {
-            val intent = Intent(this, AuraVpnService::class.java)
-            startService(intent)
+        if (requestCode == VPN_PERMISSION_REQUEST) {
+            if (resultCode == RESULT_OK) {
+                startVpnService()
+            } else {
+                pendingShieldResult?.success(false)
+                pendingShieldResult = null
+            }
         }
+    }
+
+    private fun requestShieldStart(result: MethodChannel.Result) {
+        if (pendingShieldResult != null) {
+            result.error("VPN_BUSY", "Ya hay una solicitud VPN pendiente.", null)
+            return
+        }
+
+        pendingShieldResult = result
+        val consentIntent = VpnService.prepare(this)
+        if (consentIntent != null) {
+            startActivityForResult(consentIntent, VPN_PERMISSION_REQUEST)
+        } else {
+            startVpnService()
+        }
+    }
+
+    private fun startVpnService() {
+        try {
+            val intent = Intent(this, AuraVpnService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+        } catch (exception: Exception) {
+            pendingShieldResult?.success(false)
+            pendingShieldResult = null
+            android.util.Log.e("AuraVPN", "No se pudo iniciar AuraVpnService.", exception)
+        }
+    }
+
+    private fun registerVpnReceiver() {
+        if (vpnReceiverRegistered) return
+        val filter = IntentFilter(AuraVpnService.ACTION_STATE)
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(vpnStateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(vpnStateReceiver, filter)
+        }
+        vpnReceiverRegistered = true
+    }
+
+    override fun onDestroy() {
+        if (vpnReceiverRegistered) {
+            unregisterReceiver(vpnStateReceiver)
+            vpnReceiverRegistered = false
+        }
+        pendingShieldResult?.success(false)
+        pendingShieldResult = null
+        super.onDestroy()
     }
 }

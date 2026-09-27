@@ -7,6 +7,7 @@ plugins {
 android {
     namespace "com.ciberdefensa.aura"
     compileSdk 36
+    ndkVersion flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
@@ -23,6 +24,10 @@ android {
         targetSdk 36
         versionCode 1
         versionName "1.0.0"
+
+        ndk {
+            abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
+        }
     }
 
     buildTypes {
@@ -32,8 +37,38 @@ android {
             shrinkResources false
         }
     }
+
 }
 
 flutter {
     source '../..'
+}
+
+def hevSourceDir = file("src/main/cpp/hev-socks5-tunnel")
+def hevBuildDir = layout.buildDirectory.dir("generated/hev-tun2socks")
+def hevJniLibsDir = hevBuildDir.map { it.dir("jniLibs") }
+
+android.sourceSets.main.jniLibs.srcDir(hevJniLibsDir)
+
+tasks.register("buildHevSocks5Tunnel", Exec) {
+    inputs.dir(hevSourceDir)
+    outputs.dir(hevJniLibsDir)
+
+    doFirst {
+        hevBuildDir.get().asFile.mkdirs()
+        hevJniLibsDir.get().asFile.mkdirs()
+    }
+
+    commandLine(
+        file("${android.sdkDirectory}/ndk/${android.ndkVersion}/ndk-build").absolutePath,
+        "NDK_PROJECT_PATH=null",
+        "APP_BUILD_SCRIPT=${new File(hevSourceDir, 'Android.mk').absolutePath}",
+        "NDK_APPLICATION_MK=${new File(hevSourceDir, 'Application.mk').absolutePath}",
+        "NDK_OUT=${hevBuildDir.get().dir('obj').asFile.absolutePath}",
+        "NDK_LIBS_OUT=${hevJniLibsDir.get().asFile.absolutePath}",
+    )
+}
+
+tasks.named("preBuild").configure {
+    dependsOn("buildHevSocks5Tunnel")
 }
