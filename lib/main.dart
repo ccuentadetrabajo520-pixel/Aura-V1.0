@@ -45,7 +45,11 @@ class _AuraCoreScreenState extends State<AuraCoreScreen>
   String _securityStatus = "SECURE";
   String _liveConsoleLogs = "SISTEMA AURA: Núcleo defensivo activo e íntegro.";
   bool _shieldActive = false;
+  bool _aiProcessing = false;
   String? _lastRecordedIntegrityLog;
+
+  String get _faceState =>
+      _shieldActive || _securityStatus == "THREAT" ? "THREAT" : _securityStatus;
 
   @override
   void initState() {
@@ -101,23 +105,27 @@ class _AuraCoreScreenState extends State<AuraCoreScreen>
   void _triggerLocalScan() async {
     setState(() {
       _securityStatus = "SCANNING";
+      _aiProcessing = true;
       _liveConsoleLogs =
           "INICIANDO AUDITORÍA INTERNA: Analizando firmas criptográficas y telemetría local...";
     });
-    _voiceEngine.speak("Iniciando auditoría interna del sistema.");
+    try {
+      _voiceEngine.speak("Iniciando auditoría interna del sistema.");
+      final response = await _analyzeWithStoredKey(
+        'EjecutaEscaneoDispositivo ahora y resume únicamente los hallazgos devueltos por la telemetría.',
+      );
+      if (!mounted) return;
 
-    final response = await _analyzeWithStoredKey(
-      'EjecutaEscaneoDispositivo ahora y resume únicamente los hallazgos devueltos por la telemetría.',
-    );
-    if (!mounted) return;
+      setState(() {
+        _securityStatus = "WARNING";
+        _liveConsoleLogs = response;
+      });
 
-    setState(() {
-      _securityStatus = "WARNING";
-      _liveConsoleLogs = response;
-    });
-
-    await _writeSecureLog('Escaneo: $response');
-    _voiceEngine.speak(response);
+      await _writeSecureLog('Escaneo: $response');
+      _voiceEngine.speak(response);
+    } finally {
+      if (mounted) setState(() => _aiProcessing = false);
+    }
   }
 
   void _handleAIQuery() async {
@@ -126,17 +134,22 @@ class _AuraCoreScreenState extends State<AuraCoreScreen>
 
     _inputController.clear();
     setState(() {
+      _aiProcessing = true;
       _liveConsoleLogs = "Aura procesando consulta analítica...";
     });
 
-    final response = await _analyzeWithStoredKey(query);
-    if (!mounted) return;
+    try {
+      final response = await _analyzeWithStoredKey(query);
+      if (!mounted) return;
 
-    setState(() {
-      _liveConsoleLogs = response;
-    });
-    await _writeSecureLog('Consulta: $query\nRespuesta: $response');
-    _voiceEngine.speak(response);
+      setState(() {
+        _liveConsoleLogs = response;
+      });
+      await _writeSecureLog('Consulta: $query\nRespuesta: $response');
+      _voiceEngine.speak(response);
+    } finally {
+      if (mounted) setState(() => _aiProcessing = false);
+    }
   }
 
   Future<String> _analyzeWithStoredKey(String prompt) async {
@@ -245,33 +258,34 @@ class _AuraCoreScreenState extends State<AuraCoreScreen>
                 style: TextStyle(
                     letterSpacing: 3,
                     fontWeight: FontWeight.bold,
-                    color: _getCoreColor().withOpacity(0.9),
+                    color: _getCoreColor().withValues(alpha: 0.9),
                     fontSize: 13),
               ),
             ),
             Expanded(
               child: Center(
-                child: AnimatedBuilder(
-                  animation: _pulseController,
-                  builder: (context, child) {
-                    return Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        if (_securityStatus == "SCANNING")
-                          AuraRadarWaves(
-                              animationValue: _pulseController.value,
-                              themeColor: _getCoreColor()),
-                        CustomPaint(
-                          painter: RobotFacePainter(
-                            pulseValue: _pulseController.value,
-                            themeColor: _getCoreColor(),
-                            state: _securityStatus,
-                          ),
-                          size: const Size(290, 350),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    if (_securityStatus == "SCANNING")
+                      RepaintBoundary(
+                        child: AuraRadarWaves(
+                          animation: _pulseController,
+                          themeColor: _getCoreColor(),
                         ),
-                      ],
-                    );
-                  },
+                      ),
+                    RepaintBoundary(
+                      child: CustomPaint(
+                        painter: RobotFacePainter(
+                          animation: _pulseController,
+                          themeColor: _getCoreColor(),
+                          state: _faceState,
+                          aiProcessing: _aiProcessing,
+                        ),
+                        size: const Size(290, 350),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -283,7 +297,8 @@ class _AuraCoreScreenState extends State<AuraCoreScreen>
                 decoration: BoxDecoration(
                   color: Colors.black45,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: _getCoreColor().withOpacity(0.15)),
+                  border: Border.all(
+                      color: _getCoreColor().withValues(alpha: 0.15)),
                 ),
                 child: Text(
                   _liveConsoleLogs,
@@ -328,7 +343,8 @@ class _AuraCoreScreenState extends State<AuraCoreScreen>
                   color: const Color(0xFF0F172A),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                      color: _getCoreColor().withOpacity(0.15), width: 1.5),
+                      color: _getCoreColor().withValues(alpha: 0.15),
+                      width: 1.5),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -354,7 +370,7 @@ class _AuraCoreScreenState extends State<AuraCoreScreen>
         foregroundColor: buttonColor,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: buttonColor.withOpacity(0.4)),
+          side: BorderSide(color: buttonColor.withValues(alpha: 0.4)),
         ),
       ),
       onPressed: _securityStatus == "SCANNING" ? null : action,
@@ -373,7 +389,7 @@ class _AuraCoreScreenState extends State<AuraCoreScreen>
           side: BorderSide(
               color: _shieldActive
                   ? Colors.transparent
-                  : const Color(0xFF10B981).withOpacity(0.4)),
+                  : const Color(0xFF10B981).withValues(alpha: 0.4)),
         ),
       ),
       onPressed: _securityStatus == "SCANNING" ? null : _toggleNetworkShield,
@@ -384,28 +400,36 @@ class _AuraCoreScreenState extends State<AuraCoreScreen>
 }
 
 class RobotFacePainter extends CustomPainter {
-  final double pulseValue;
+  final Animation<double> animation;
   final Color themeColor;
   final String state;
+  final bool aiProcessing;
 
   RobotFacePainter({
-    required this.pulseValue,
+    required this.animation,
     required this.themeColor,
     required this.state,
-  });
+    required this.aiProcessing,
+  }) : super(repaint: animation);
 
   @override
   void paint(Canvas canvas, Size size) {
+    final pulseValue = animation.value;
     final bool isScanning = state == "SCANNING";
     final bool isThreat = state == "THREAT";
 
+    canvas.save();
+    if (aiProcessing) {
+      canvas.translate(0, math.sin(pulseValue * math.pi * 2) * 5);
+    }
+
     final paint = Paint()
-      ..color = themeColor.withOpacity(0.85)
+      ..color = themeColor.withValues(alpha: 0.85)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
 
     final glowPaint = Paint()
-      ..color = themeColor.withOpacity(0.12 * (1.0 + pulseValue))
+      ..color = themeColor.withValues(alpha: 0.12 * (1.0 + pulseValue))
       ..style = PaintingStyle.fill;
 
     final facePath = Path()
@@ -470,8 +494,13 @@ class RobotFacePainter extends CustomPainter {
     }
 
     canvas.drawPath(mouthPath, paint);
+    canvas.restore();
   }
 
   @override
-  bool shouldRepaint(covariant RobotFacePainter oldDelegate) => true;
+  bool shouldRepaint(covariant RobotFacePainter oldDelegate) =>
+      oldDelegate.animation != animation ||
+      oldDelegate.themeColor != themeColor ||
+      oldDelegate.state != state ||
+      oldDelegate.aiProcessing != aiProcessing;
 }

@@ -11,18 +11,15 @@ workflows:
         - push
       branch_patterns:
         - pattern: 'main'
+        - pattern: 'principal'
     scripts:
       - name: Set up local.properties
         script: |
           echo "flutter.sdk=$FLUTTER_ROOT" > android/local.properties
       - name: Build Android APK (Release)
         script: |
-          if [ -z "${AURA_ALLOWED_CERT_SHA256:-}" ]; then
-            echo "WARNING: AURA_ALLOWED_CERT_SHA256 is unset; the release app will fail closed at runtime."
-          fi
           flutter clean
           flutter pub get
-          export ORG_GRADLE_PROJECT_AURA_ALLOWED_CERT_SHA256="$AURA_ALLOWED_CERT_SHA256"
           flutter build apk --release \
             --dart-define=GEMINI_MODEL="${GEMINI_MODEL:-gemini-2.5-flash}"
     artifacts:

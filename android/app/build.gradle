@@ -1,17 +1,11 @@
+import java.security.KeyStore
+import java.security.MessageDigest
+
 plugins {
     id "com.android.application"
     id "kotlin-android"
     id "dev.flutter.flutter-gradle-plugin"
 }
-
-def configuredAuraCerts = providers.gradleProperty("AURA_ALLOWED_CERT_SHA256")
-    .orElse(providers.environmentVariable("AURA_ALLOWED_CERT_SHA256"))
-    .getOrElse("")
-def auraAllowedCertSha256 = configuredAuraCerts
-    .split(',')
-    .collect { it.trim().replace(":", "").toUpperCase() }
-    .findAll { it ==~ /[0-9A-F]{64}/ }
-    .join(',')
 
 android {
     namespace "com.ciberdefensa.aura"
@@ -37,7 +31,6 @@ android {
         targetSdk 36
         versionCode 1
         versionName "1.0.0"
-        buildConfigField "String", "AURA_ALLOWED_CERT_SHA256", "\"${auraAllowedCertSha256}\""
 
         ndk {
             abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
@@ -52,6 +45,94 @@ android {
         }
     }
 
+}
+
+def signingCertificateSha256 = { signingConfig ->
+    def keystoreFile = signingConfig.storeFile
+    if (keystoreFile == null) {
+        throw new GradleException("No keystore configured for signing config '${signingConfig.name}'.")
+    }
+
+    def storePassword = signingConfig.storePassword
+    def keyAlias = signingConfig.keyAlias
+    def keyPassword = signingConfig.keyPassword
+
+    if (!keystoreFile.exists() && signingConfig.name == "debug") {
+        if (storePassword == null) storePassword = "android"
+        if (keyAlias == null) keyAlias = "androiddebugkey"
+        if (keyPassword == null) keyPassword = "android"
+
+        keystoreFile.parentFile.mkdirs()
+        def keytool = new File(System.getProperty("java.home"), "bin/keytool")
+        if (!keytool.isFile()) {
+            throw new GradleException("JDK keytool was not found at ${keytool}.")
+        }
+        exec {
+            executable keytool.absolutePath
+            args "-genkeypair", "-v",
+                "-keystore", keystoreFile.absolutePath,
+                "-storetype", "JKS",
+                "-storepass", storePassword,
+                "-alias", keyAlias,
+                "-keypass", keyPassword,
+                "-keyalg", "RSA",
+                "-keysize", "2048",
+                "-validity", "10000",
+                "-dname", "CN=Android Debug,O=Android,C=US"
+            standardOutput = new ByteArrayOutputStream()
+            errorOutput = new ByteArrayOutputStream()
+        }
+    }
+
+    if (!keystoreFile.isFile() || storePassword == null || keyAlias == null) {
+        throw new GradleException("Signing keystore or credentials are unavailable for '${signingConfig.name}'.")
+    }
+
+    def keyStore = null
+    Exception lastLoadError = null
+    [signingConfig.storeType, "JKS", "PKCS12"].findAll { it != null }.unique().each { type ->
+        if (keyStore == null) {
+            try {
+                def candidate = KeyStore.getInstance(type)
+                keystoreFile.withInputStream { stream ->
+                    candidate.load(stream, storePassword.toCharArray())
+                }
+                keyStore = candidate
+            } catch (Exception exception) {
+                lastLoadError = exception
+            }
+        }
+    }
+
+    if (keyStore == null) {
+        throw new GradleException("Could not read signing keystore '${keystoreFile}'.", lastLoadError)
+    }
+
+    def certificate = keyStore.getCertificate(keyAlias)
+    if (certificate == null) {
+        throw new GradleException("Alias '${keyAlias}' has no signing certificate in '${keystoreFile}'.")
+    }
+
+    MessageDigest.getInstance("SHA-256").digest(certificate.encoded)
+        .collect { String.format("%02X", it & 0xff) }
+        .join()
+}
+
+android.buildTypes.each { buildType ->
+    def activeSigningConfig = buildType.signingConfig
+    if (activeSigningConfig == null && buildType.name == "debug") {
+        activeSigningConfig = android.signingConfigs.getByName("debug")
+    }
+    if (activeSigningConfig == null) {
+        throw new GradleException("No active signing config for '${buildType.name}'.")
+    }
+
+    def activeCertificateSha256 = signingCertificateSha256(activeSigningConfig)
+    buildType.buildConfigField(
+        "String",
+        "AURA_ALLOWED_CERT_SHA256",
+        "\"${activeCertificateSha256}\"",
+    )
 }
 
 flutter {

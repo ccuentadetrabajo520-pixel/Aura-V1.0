@@ -51,7 +51,7 @@ Distingue evidencia de inferencia y responde en español de forma concisa.
       : _providedApiKey = apiKey?.trim(),
         _secureVault = secureVault ?? AuraSecureVault();
 
-  Future<String?> get storedApiKey() => _secureVault.readGeminiApiKey();
+  Future<String?> get storedApiKey => _secureVault.readGeminiApiKey();
 
   Future<void> saveApiKey(String apiKey) async {
     await _secureVault.saveGeminiApiKey(apiKey);
@@ -71,18 +71,18 @@ Distingue evidencia de inferencia y responde en español de forma concisa.
 
     _modelApiKey = apiKey;
     return _model = GenerativeModel(
-          model: _modelName,
-          apiKey: apiKey,
-          generationConfig: GenerationConfig(temperature: 0.2),
-          systemInstruction: Content.system(_systemPrompt),
-          tools: _tools,
-          toolConfig: ToolConfig(
-            functionCallingConfig: FunctionCallingConfig(
-              mode: FunctionCallingMode.auto,
-            ),
-          ),
-          );
-        }
+      model: _modelName,
+      apiKey: apiKey,
+      generationConfig: GenerationConfig(temperature: 0.2),
+      systemInstruction: Content.system(_systemPrompt),
+      tools: _tools,
+      toolConfig: ToolConfig(
+        functionCallingConfig: FunctionCallingConfig(
+          mode: FunctionCallingMode.auto,
+        ),
+      ),
+    );
+  }
 
   Future<bool> setShieldActive(bool active) async {
     final result = await _shieldChannel.invokeMethod<bool>(

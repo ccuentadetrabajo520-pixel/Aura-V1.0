@@ -1,36 +1,55 @@
 import 'package:flutter/material.dart';
 
 class AuraRadarWaves extends StatelessWidget {
-  final double animationValue;
+  final Animation<double> animation;
   final Color themeColor;
 
   const AuraRadarWaves({
     Key? key,
-    required this.animationValue,
+    required this.animation,
     required this.themeColor,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      alignment: Alignment.center,
-      children: List.generate(3, (index) {
-        double currentProgress = (animationValue + (index / 3)) % 1.0;
-        return Opacity(
-          opacity: (1.0 - currentProgress).clamp(0.0, 1.0),
-          child: Container(
-            width: 320 * currentProgress,
-            height: 380 * currentProgress,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: themeColor.withOpacity(0.25),
-                width: 1.5,
-              ),
-            ),
-          ),
-        );
-      }),
+    return CustomPaint(
+      painter: AuraRadarPainter(
+        animation: animation,
+        themeColor: themeColor,
+      ),
+      size: const Size(320, 380),
     );
   }
+}
+
+class AuraRadarPainter extends CustomPainter {
+  final Animation<double> animation;
+  final Color themeColor;
+
+  AuraRadarPainter({
+    required this.animation,
+    required this.themeColor,
+  }) : super(repaint: animation);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final maxRadius = size.width / 2;
+
+    for (var index = 0; index < 3; index++) {
+      final progress = (animation.value + index / 3) % 1.0;
+      final paint = Paint()
+        ..color = themeColor.withValues(
+          alpha: ((1.0 - progress) * 0.25).clamp(0.0, 0.25).toDouble(),
+        )
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5;
+      canvas.drawCircle(center, maxRadius * progress, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant AuraRadarPainter oldDelegate) =>
+      oldDelegate.animation != animation ||
+      oldDelegate.themeColor != themeColor;
 }
