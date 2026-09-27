@@ -106,7 +106,7 @@ class _AuraCoreScreenState extends State<AuraCoreScreen>
     });
     _voiceEngine.speak("Iniciando auditoría interna del sistema.");
 
-    final response = await _aiBrain.analyzeCyberThreat(
+    final response = await _analyzeWithStoredKey(
       'EjecutaEscaneoDispositivo ahora y resume únicamente los hallazgos devueltos por la telemetría.',
     );
     if (!mounted) return;
@@ -129,7 +129,7 @@ class _AuraCoreScreenState extends State<AuraCoreScreen>
       _liveConsoleLogs = "Aura procesando consulta analítica...";
     });
 
-    final response = await _aiBrain.analyzeCyberThreat(query);
+    final response = await _analyzeWithStoredKey(query);
     if (!mounted) return;
 
     setState(() {
@@ -137,6 +137,59 @@ class _AuraCoreScreenState extends State<AuraCoreScreen>
     });
     await _writeSecureLog('Consulta: $query\nRespuesta: $response');
     _voiceEngine.speak(response);
+  }
+
+  Future<String> _analyzeWithStoredKey(String prompt) async {
+    var response = await _aiBrain.analyzeCyberThreat(prompt);
+    if (!response.startsWith('CONFIGURACIÓN REQUERIDA:')) return response;
+
+    final apiKey = await _requestGeminiApiKey();
+    if (apiKey == null || apiKey.trim().isEmpty) {
+      return 'Consulta cancelada: no se configuró la clave de Gemini.';
+    }
+
+    try {
+      await _aiBrain.saveApiKey(apiKey);
+    } catch (_) {
+      return 'No se pudo guardar la clave de Gemini en el almacenamiento seguro.';
+    }
+    response = await _aiBrain.analyzeCyberThreat(prompt);
+    return response;
+  }
+
+  Future<String?> _requestGeminiApiKey() async {
+    final controller = TextEditingController();
+    try {
+      return await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Configurar Gemini'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            obscureText: true,
+            enableSuggestions: false,
+            autocorrect: false,
+            decoration: const InputDecoration(
+              labelText: 'API key',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+              child: const Text('Guardar cifrada'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      controller.dispose();
+    }
   }
 
   Future<void> _toggleNetworkShield() async {

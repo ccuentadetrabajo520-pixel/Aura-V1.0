@@ -24,7 +24,6 @@ workflows:
           flutter pub get
           export ORG_GRADLE_PROJECT_AURA_ALLOWED_CERT_SHA256="$AURA_ALLOWED_CERT_SHA256"
           flutter build apk --release \
-            --dart-define=GEMINI_API_KEY="$GEMINI_API_KEY" \
             --dart-define=GEMINI_MODEL="${GEMINI_MODEL:-gemini-2.5-flash}"
     artifacts:
       - build/app/outputs/flutter-apk/*.apk

@@ -1,6 +1,8 @@
 import 'package:flutter/services.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 
+import 'secure_vault.dart';
+
 class AuraAIBrain {
   static const String _modelName = String.fromEnvironment(
     'GEMINI_MODEL',
@@ -40,14 +42,37 @@ Distingue evidencia de inferencia y responde en español de forma concisa.
     ]),
   ];
 
-  final String _apiKey;
-  final GenerativeModel _model;
+  final AuraSecureVault _secureVault;
+  final String? _providedApiKey;
+  GenerativeModel? _model;
+  String? _modelApiKey;
 
-  AuraAIBrain({String? apiKey})
-      : _apiKey = apiKey ?? const String.fromEnvironment('GEMINI_API_KEY'),
-        _model = GenerativeModel(
+  AuraAIBrain({String? apiKey, AuraSecureVault? secureVault})
+      : _providedApiKey = apiKey?.trim(),
+        _secureVault = secureVault ?? AuraSecureVault();
+
+  Future<String?> get storedApiKey() => _secureVault.readGeminiApiKey();
+
+  Future<void> saveApiKey(String apiKey) async {
+    await _secureVault.saveGeminiApiKey(apiKey);
+    _model = null;
+    _modelApiKey = null;
+  }
+
+  Future<void> deleteApiKey() async {
+    await _secureVault.deleteGeminiApiKey();
+    _model = null;
+    _modelApiKey = null;
+  }
+
+  Future<GenerativeModel?> _modelForKey(String? apiKey) async {
+    if (apiKey == null || apiKey.isEmpty) return null;
+    if (_model != null && _modelApiKey == apiKey) return _model;
+
+    _modelApiKey = apiKey;
+    return _model = GenerativeModel(
           model: _modelName,
-          apiKey: apiKey ?? const String.fromEnvironment('GEMINI_API_KEY'),
+          apiKey: apiKey,
           generationConfig: GenerationConfig(temperature: 0.2),
           systemInstruction: Content.system(_systemPrompt),
           tools: _tools,
@@ -56,7 +81,8 @@ Distingue evidencia de inferencia y responde en español de forma concisa.
               mode: FunctionCallingMode.auto,
             ),
           ),
-        );
+          );
+        }
 
   Future<bool> setShieldActive(bool active) async {
     final result = await _shieldChannel.invokeMethod<bool>(
@@ -79,12 +105,16 @@ Distingue evidencia de inferencia y responde en español de forma concisa.
   }
 
   Future<String> analyzeCyberThreat(String userInput) async {
-    if (_apiKey.isEmpty) {
-      return 'CONFIGURACIÓN REQUERIDA: falta GEMINI_API_KEY.';
-    }
-
     try {
-      final chat = _model.startChat();
+      final apiKey = _providedApiKey?.isNotEmpty == true
+          ? _providedApiKey
+          : await _secureVault.readGeminiApiKey();
+      final model = await _modelForKey(apiKey);
+      if (model == null) {
+        return 'CONFIGURACIÓN REQUERIDA: falta la clave de Gemini guardada.';
+      }
+
+      final chat = model.startChat();
       var response = await chat.sendMessage(Content.text(userInput));
 
       for (var turn = 0; turn < 4; turn++) {
@@ -105,7 +135,7 @@ Distingue evidencia de inferencia y responde en español de forma concisa.
 
       return response.text?.trim() ??
           'Se alcanzó el límite de acciones automáticas de esta consulta.';
-    } catch (error) {
+    } catch (_) {
       return 'ERROR DE ANÁLISIS: no se pudo completar la consulta de Aura.';
     }
   }
