@@ -30,9 +30,11 @@ object AuraAntiTampering {
             .toSet()
 
         val installedCertificates = installedSignerDigests(context)
-        val signatureValid = allowedCertificates.isNotEmpty() &&
-            installedCertificates.isNotEmpty() &&
-            installedCertificates.all { it in allowedCertificates }
+        val localDebugFallback = BuildConfig.DEBUG && allowedCertificates.isEmpty()
+        val signatureValid = localDebugFallback ||
+            (allowedCertificates.isNotEmpty() &&
+                installedCertificates.isNotEmpty() &&
+                installedCertificates.all { it in allowedCertificates })
 
         val mapsResult = try {
             val maps = File("/proc/self/maps").bufferedReader().use { it.readText() }
@@ -45,6 +47,7 @@ object AuraAntiTampering {
         val fridaDetected = mapsResult.second
 
         val debuggerConnected = Debug.isDebuggerConnected() || Debug.waitingForDebugger()
+        val debuggerBlocked = debuggerConnected && !BuildConfig.DEBUG
         val adbEnabled = try {
             Settings.Global.getInt(
                 context.contentResolver,
@@ -54,8 +57,9 @@ object AuraAntiTampering {
         } catch (_: Exception) {
             true
         }
+        val adbBlocked = adbEnabled && !BuildConfig.DEBUG
         val integrityFailed = !signatureValid || !mapsInspectionSucceeded ||
-            fridaDetected || debuggerConnected || adbEnabled
+            fridaDetected || debuggerBlocked || adbBlocked
 
         return mapOf(
             "isSecure" to !integrityFailed,
@@ -64,7 +68,10 @@ object AuraAntiTampering {
             "fridaDetected" to fridaDetected,
             "mapsInspectionSucceeded" to mapsInspectionSucceeded,
             "isDebuggerConnected" to debuggerConnected,
+            "debuggerBlocked" to debuggerBlocked,
             "adbEnabled" to adbEnabled,
+            "adbBlocked" to adbBlocked,
+            "localDebugFallback" to localDebugFallback,
         )
     }
 

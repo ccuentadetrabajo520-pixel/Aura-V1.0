@@ -49,15 +49,16 @@ class AuraSecurityEngine {
         antiTamperingReport?['isDebuggerConnected'] == true;
     final alteredEnvironment = nativeReport?['isVirtualEnvironment'] == true;
     final fridaDetected = antiTamperingReport?['fridaDetected'] == true;
-    final adbEnabled = antiTamperingReport?['adbEnabled'] == true;
+    final adbBlocked = antiTamperingReport?['adbBlocked'] == true;
+    final debuggerBlocked = antiTamperingReport?['debuggerBlocked'] == true;
     final signatureValid = antiTamperingReport?['signatureValid'] == true;
     final antiTamperingFailed = antiTamperingReport?['isSecure'] == false;
     final compromised =
         rootBinaryFound ||
-        debuggerDetected ||
+        debuggerBlocked ||
         alteredEnvironment ||
         fridaDetected ||
-        adbEnabled ||
+        adbBlocked ||
         antiTamperingFailed;
     final level = compromised
         ? SystemThreatLevel.critical
@@ -74,11 +75,15 @@ class AuraSecurityEngine {
               : 'Aura Core: comprobaciones de integridad completadas.',
       'rootBinaryFound': rootBinaryFound,
       'isDebuggerConnected': debuggerDetected,
+      'debuggerBlocked': debuggerBlocked,
       'isVirtualEnvironment': alteredEnvironment,
       'fridaDetected': fridaDetected,
-      'adbEnabled': adbEnabled,
+      'adbEnabled': antiTamperingReport?['adbEnabled'] == true,
+      'adbBlocked': adbBlocked,
       'signatureValid': signatureValid,
       'antiTamperingCheckFailed': antiTamperingFailed,
+      'localDebugFallback':
+          antiTamperingReport?['localDebugFallback'] == true,
       'timestamp': DateTime.now().toUtc().toIso8601String(),
     };
   }

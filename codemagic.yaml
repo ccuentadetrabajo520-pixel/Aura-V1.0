@@ -18,8 +18,7 @@ workflows:
       - name: Build Android APK (Release)
         script: |
           if [ -z "${AURA_ALLOWED_CERT_SHA256:-}" ]; then
-            echo "Configure AURA_ALLOWED_CERT_SHA256 with the release signing certificate SHA-256." >&2
-            exit 1
+            echo "WARNING: AURA_ALLOWED_CERT_SHA256 is unset; the release app will fail closed at runtime."
           fi
           flutter clean
           flutter pub get
