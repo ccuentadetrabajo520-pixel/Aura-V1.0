@@ -8,6 +8,8 @@ enum SystemThreatLevel { secure, warning, critical }
 class AuraSecurityEngine {
   static const MethodChannel _channel =
       MethodChannel('com.ciberdefensa.aura/telemetry');
+  static const MethodChannel _antiTamperingChannel =
+      MethodChannel('com.ciberdefensa.aura/anti_tampering');
   static const List<String> _rootBinaryPaths = [
     '/sbin/su',
     '/system/bin/su',
@@ -16,6 +18,7 @@ class AuraSecurityEngine {
 
   Future<Map<String, dynamic>> checkDeviceIntegrity() async {
     Map<dynamic, dynamic>? nativeReport;
+    Map<dynamic, dynamic>? antiTamperingReport;
     var nativeCheckFailed = false;
 
     try {
@@ -29,11 +32,33 @@ class AuraSecurityEngine {
       nativeCheckFailed = true;
     }
 
+    try {
+      antiTamperingReport =
+          await _antiTamperingChannel.invokeMapMethod<dynamic, dynamic>(
+        'checkIntegrity',
+      );
+      nativeCheckFailed = nativeCheckFailed || antiTamperingReport == null;
+    } on PlatformException {
+      nativeCheckFailed = true;
+    } on MissingPluginException {
+      nativeCheckFailed = true;
+    }
+
     final rootBinaryFound = await _hasRootBinary();
-    final debuggerDetected = nativeReport?['isDebuggerConnected'] == true;
+    final debuggerDetected = nativeReport?['isDebuggerConnected'] == true ||
+        antiTamperingReport?['isDebuggerConnected'] == true;
     final alteredEnvironment = nativeReport?['isVirtualEnvironment'] == true;
+    final fridaDetected = antiTamperingReport?['fridaDetected'] == true;
+    final adbEnabled = antiTamperingReport?['adbEnabled'] == true;
+    final signatureValid = antiTamperingReport?['signatureValid'] == true;
+    final antiTamperingFailed = antiTamperingReport?['isSecure'] == false;
     final compromised =
-        rootBinaryFound || debuggerDetected || alteredEnvironment;
+        rootBinaryFound ||
+        debuggerDetected ||
+        alteredEnvironment ||
+        fridaDetected ||
+        adbEnabled ||
+        antiTamperingFailed;
     final level = compromised
         ? SystemThreatLevel.critical
         : nativeCheckFailed
@@ -50,6 +75,10 @@ class AuraSecurityEngine {
       'rootBinaryFound': rootBinaryFound,
       'isDebuggerConnected': debuggerDetected,
       'isVirtualEnvironment': alteredEnvironment,
+      'fridaDetected': fridaDetected,
+      'adbEnabled': adbEnabled,
+      'signatureValid': signatureValid,
+      'antiTamperingCheckFailed': antiTamperingFailed,
       'timestamp': DateTime.now().toUtc().toIso8601String(),
     };
   }

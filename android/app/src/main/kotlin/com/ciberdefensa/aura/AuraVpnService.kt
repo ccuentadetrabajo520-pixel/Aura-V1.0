@@ -38,10 +38,13 @@ class AuraVpnService : VpnService() {
     private val worker = Executors.newSingleThreadExecutor()
     private val feedRefresh: ScheduledExecutorService =
         Executors.newSingleThreadScheduledExecutor()
+    private val integrityMonitor: ScheduledExecutorService =
+        Executors.newSingleThreadScheduledExecutor()
     private val blockedIps: MutableSet<String> =
         Collections.synchronizedSet(HashSet())
     private val startRequested = AtomicBoolean(false)
     private var vpnInterface: ParcelFileDescriptor? = null
+    private var integrityCheckScheduled = false
     @Volatile private var tunnelStarted = false
 
     override fun onStartCommand(
@@ -50,6 +53,17 @@ class AuraVpnService : VpnService() {
         startId: Int,
     ): Int {
         startForeground(NOTIFICATION_ID, createNotification())
+        AuraAntiTampering.enforce(this)
+        if (integrityMonitor.isShutdown) return START_NOT_STICKY
+        if (!integrityCheckScheduled) {
+            integrityCheckScheduled = true
+            integrityMonitor.scheduleWithFixedDelay(
+                { AuraAntiTampering.enforce(this) },
+                30,
+                30,
+                TimeUnit.SECONDS,
+            )
+        }
         if (tunnelStarted) {
             reportState(true, "El escudo VPN ya estaba activo.")
         } else if (startRequested.compareAndSet(false, true)) {
@@ -60,6 +74,7 @@ class AuraVpnService : VpnService() {
 
     override fun onDestroy() {
         feedRefresh.shutdownNow()
+        integrityMonitor.shutdownNow()
         worker.shutdownNow()
         if (tunnelStarted) {
             TProxyService.TProxyStopService()

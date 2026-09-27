@@ -7,11 +7,129 @@ import android.content.IntentFilter
 import android.net.VpnService
 import android.os.Build
 import android.os.Debug
+import android.provider.Settings
 import android.content.pm.PackageManager
 import android.content.pm.ApplicationInfo
+import java.io.File
+import java.security.KeyStore
+import java.security.MessageDigest
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+
+object AuraAntiTampering {
+    private const val ANDROIDX_MASTER_KEY_ALIAS = "_androidx_security_master_key_"
+    private const val FLUTTER_SECURE_STORAGE_KEY_SUFFIX =
+        ".FlutterSecureStoragePluginKey"
+
+    fun inspect(context: Context): Map<String, Any> {
+        val allowedCertificates = BuildConfig.AURA_ALLOWED_CERT_SHA256
+            .split(',')
+            .map { it.trim().replace(":", "").uppercase() }
+            .filter { it.matches(Regex("[0-9A-F]{64}")) }
+            .toSet()
+
+        val installedCertificates = installedSignerDigests(context)
+        val signatureValid = allowedCertificates.isNotEmpty() &&
+            installedCertificates.isNotEmpty() &&
+            installedCertificates.all { it in allowedCertificates }
+
+        val mapsResult = try {
+            val maps = File("/proc/self/maps").bufferedReader().use { it.readText() }
+                .lowercase()
+            true to ("frida" in maps || "gadget" in maps)
+        } catch (_: Exception) {
+            false to false
+        }
+        val mapsInspectionSucceeded = mapsResult.first
+        val fridaDetected = mapsResult.second
+
+        val debuggerConnected = Debug.isDebuggerConnected() || Debug.waitingForDebugger()
+        val adbEnabled = try {
+            Settings.Global.getInt(
+                context.contentResolver,
+                Settings.Global.ADB_ENABLED,
+                0,
+            ) == 1
+        } catch (_: Exception) {
+            true
+        }
+        val integrityFailed = !signatureValid || !mapsInspectionSucceeded ||
+            fridaDetected || debuggerConnected || adbEnabled
+
+        return mapOf(
+            "isSecure" to !integrityFailed,
+            "signatureValid" to signatureValid,
+            "signingCertificates" to installedCertificates.toList(),
+            "fridaDetected" to fridaDetected,
+            "mapsInspectionSucceeded" to mapsInspectionSucceeded,
+            "isDebuggerConnected" to debuggerConnected,
+            "adbEnabled" to adbEnabled,
+        )
+    }
+
+    fun enforce(context: Context): Map<String, Any> {
+        val report = try {
+            inspect(context)
+        } catch (exception: Exception) {
+            android.util.Log.e("AuraIntegrity", "Integrity inspection failed.", exception)
+            mapOf(
+                "isSecure" to false,
+                "inspectionFailed" to true,
+            )
+        }
+        if (report["isSecure"] != true) {
+            destroyLocalKeystoreKeys(context)
+            android.util.Log.e("AuraIntegrity", "Integrity check failed; terminating process.")
+            System.exit(0)
+        }
+        return report
+    }
+
+    private fun installedSignerDigests(context: Context): Set<String> {
+        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val packageInfo = context.packageManager.getPackageInfo(
+                context.packageName,
+                PackageManager.GET_SIGNING_CERTIFICATES,
+            )
+            packageInfo.signingInfo?.apkContentsSigners?.map { it.toByteArray() }
+                .orEmpty()
+        } else {
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageInfo(
+                context.packageName,
+                PackageManager.GET_SIGNATURES,
+            ).signatures?.map { it.toByteArray() }.orEmpty()
+        }
+
+        val digest = MessageDigest.getInstance("SHA-256")
+        return signatures.map { signature ->
+            digest.digest(signature).joinToString("") { byte -> "%02X".format(byte) }
+        }.toSet()
+    }
+
+    private fun destroyLocalKeystoreKeys(context: Context) {
+        try {
+            val keyStore = KeyStore.getInstance("AndroidKeyStore")
+            keyStore.load(null)
+            val knownAliases = setOf(
+                ANDROIDX_MASTER_KEY_ALIAS,
+                context.packageName + FLUTTER_SECURE_STORAGE_KEY_SUFFIX,
+            )
+            knownAliases.forEach { alias ->
+                if (keyStore.containsAlias(alias)) keyStore.deleteEntry(alias)
+            }
+
+            val aliases = keyStore.aliases()
+            while (aliases.hasMoreElements()) {
+                val alias = aliases.nextElement()
+                if (alias.startsWith("aura_")) keyStore.deleteEntry(alias)
+            }
+        } catch (exception: Exception) {
+            android.util.Log.e("AuraIntegrity", "Could not wipe Aura Keystore keys.", exception)
+        }
+    }
+}
 
 class MainActivity: FlutterActivity() {
     private companion object {
@@ -20,6 +138,7 @@ class MainActivity: FlutterActivity() {
 
     private val SHIELD_CHANNEL = "com.ciberdefensa.aura/shield"
     private val TELEMETRY_CHANNEL = "com.ciberdefensa.aura/telemetry"
+    private val ANTI_TAMPERING_CHANNEL = "com.ciberdefensa.aura/anti_tampering"
     private var pendingShieldResult: MethodChannel.Result? = null
     private var vpnReceiverRegistered = false
     private val vpnStateReceiver = object : BroadcastReceiver() {
@@ -97,6 +216,16 @@ class MainActivity: FlutterActivity() {
                     result.success(integrityReport)
                 }
 
+                else -> result.notImplemented()
+            }
+        }
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            ANTI_TAMPERING_CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "checkIntegrity" -> result.success(AuraAntiTampering.enforce(this))
                 else -> result.notImplemented()
             }
         }
